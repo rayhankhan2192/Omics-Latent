@@ -2,8 +2,6 @@ import logging
 import os
 import tensorflow as tf
 
-logger = logging.getLogger("Models Module")
-
 def create_autoencoder(input_dim, latent_dim=128):
     """
     Creates a standard Autoencoder model consisting of an Encoder and a Decoder.
@@ -18,11 +16,11 @@ def create_autoencoder(input_dim, latent_dim=128):
     # Encoder
     input_layer = tf.keras.layers.Input(shape=(input_dim,), name='encoder_input')
     encoded = tf.keras.layers.Dense(512, activation='relu')(input_layer)
-    encoded = tf.keras.layers.Dense(0.3)(encoded)
+    encoded = tf.keras.layers.Dropout(0.3)(encoded)
     encoded = tf.keras.layers.Dense(256, activation='relu')(encoded)
     latent_space = tf.keras.layers.Dense(latent_dim, activation='relu', name='latent_space')(encoded)
     
-    encoder = tf.keras.layers.Dense(inputs=input_layer, outputs=latent_space, name='encoder')
+    encoder = tf.keras.models.Model(inputs=input_layer, outputs=latent_space, name='encoder')
 
     # Decoder 
     decoder_input = tf.keras.layers.Input(shape=(latent_dim,), name='decoder_input')
@@ -31,13 +29,14 @@ def create_autoencoder(input_dim, latent_dim=128):
     decoded = tf.keras.layers.Dense(512, activation='relu')(decoded)
     reconstruction = tf.keras.layers.Dense(input_dim, activation='sigmoid', name='reconstruction')(decoded)
     
-    decoder = tf.keras.layers.Model(inputs=decoder_input, outputs=reconstruction, name='decoder')
+    decoder = tf.keras.models.Model(inputs=decoder_input, outputs=reconstruction, name='decoder')
 
-    # Full Autoencoder
+    # Full Autoencoder 
     autoencoder_output = decoder(encoder(input_layer))
-    autoencoder = tf.keras.layers.Model(inputs=input_layer, outputs=autoencoder_output, name='autoencoder')
+    autoencoder = tf.keras.models.Model(inputs=input_layer, outputs=autoencoder_output, name='autoencoder')
     
     return autoencoder, encoder
+
 
 def create_classifier(input_dim, num_classes):
     """
@@ -57,6 +56,6 @@ def create_classifier(input_dim, num_classes):
     x = tf.keras.layers.Dropout(0.5)(x)
     output_layer = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
     
-    classifier = tf.keras.layers.Model(inputs=input_layer, outputs=output_layer)
+    classifier = tf.keras.models.Model(inputs=input_layer, outputs=output_layer)
     
     return classifier
