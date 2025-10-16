@@ -1,103 +1,114 @@
+import os
 import numpy as np
 import tensorflow as tf
 from sklearn.metrics import accuracy_score, f1_score
+from sklearn.preprocessing import LabelEncoder
 import logging
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("Training Module")
-from . import features
-from . import models
+
+# Local imports
+from main import features
+from main import models
+
+# --- Setup Logging ---
+logging.basicConfig(level=logging.INFO, format='INFO:%(module)s:%(message)s')
+
 
 def pretrain_encoders(data_tr_list, config):
     """
-    Pre-trains an autoencoder for each omics view to learn feature representations.
-
-    Args:
-        data_tr_list (list): List of training data arrays for each view.
-        config (dict): A dictionary containing training configuration parameters.
-
-    Returns:
-        list: A list of trained standalone encoder models.
+    Trains an autoencoder for each omics view in an unsupervised manner.
     """
     encoders = []
     for i, data_tr in enumerate(data_tr_list):
+        logging.info(f"... Pre-training autoencoder for view {i+1} ...")
         input_dim = data_tr.shape[1]
+        
+        # Create the autoencoder and encoder models
         autoencoder, encoder = models.create_autoencoder(input_dim, latent_dim=config['latent_dim'])
-        autoencoder.compile(optimizer='adam', loss='mse')
         
-        autoencoder.fit(data_tr, data_tr,
-                        epochs=config['pretrain_epochs'],
-                        batch_size=config['batch_size'],
-                        shuffle=True,
-                        validation_split=0.1,
-                        verbose=2)
+        autoencoder.compile(optimizer=tf.keras.optimizers.Adam(config['learning_rate_pretrain']), loss='mse')
         
+        # Train the autoencoder
+        autoencoder.fit(
+            data_tr, data_tr,
+            epochs=config['epochs_pretrain'],
+            batch_size=config['batch_size'],
+            shuffle=True,
+            verbose=1
+        )
         encoders.append(encoder)
-        logger.info(f"Autoencoder for view {i+1} pre-trained successfully.")
+    logging.info("All autoencoders pre-trained successfully.")
     return encoders
+
 
 def train_classifier(encoders, data_tr_list, data_te_list, labels_tr, labels_te, config):
     """
-    Trains and evaluates a classifier on the latent features extracted by the encoders.
-
-    Args:
-        encoders (list): List of pre-trained encoder models.
-        data_tr_list (list): List of training data arrays for each view.
-        data_te_list (list): List of testing data arrays for each view.
-        labels_tr (np.array): Training labels.
-        labels_te (np.array): Testing labels.
-        config (dict): A dictionary containing training configuration parameters.
+    Extracts latent features, fuses them, and trains a final classifier.
     """
-    # Extract latent features by transforming data with the pre-trained encoders
-    train_latent_list = [encoder.predict(data_tr) for encoder, data_tr in zip(encoders, data_tr_list)]
-    test_latent_list = [encoder.predict(data_te) for encoder, data_te in zip(encoders, data_te_list)]
+    # Extract and Fuse Latent Features ---
+    logging.info("Extracting and fusing latent features...")
+    train_latent_features_list = [encoder.predict(data) for encoder, data in zip(encoders, data_tr_list)]
+    test_latent_features_list = [encoder.predict(data) for encoder, data in zip(encoders, data_te_list)]
+    
+    train_features_fused = np.concatenate(train_latent_features_list, axis=1)
+    test_features_fused = np.concatenate(test_latent_features_list, axis=1)
+    
+    logging.info(f"Shape of fused training features: {train_features_fused.shape}")
+    logging.info(f"Shape of fused test features: {test_features_fused.shape}")
 
-    # Concatenate latent features from all views
-    train_latent_features = np.concatenate(train_latent_list, axis=1)
-    test_latent_features = np.concatenate(test_latent_list, axis=1)
-
-    logger.info(f"Concatenated training latent features shape: {train_latent_features.shape}")
-    logger.info(f"Concatenated testing latent features shape: {test_latent_features.shape}")
-
+    # Train the Classifier ---
+    logging.info("Training the final classifier...")
+    classifier_input_dim = train_features_fused.shape[1]
+    
     # Create and compile the classifier model
-    classifier = models.create_classifier(
-        input_dim=train_latent_features.shape[1], 
-        num_classes=config['num_classes']
-    )
+    classifier = models.create_classifier(classifier_input_dim, config['num_classes'])
     classifier.compile(optimizer=tf.keras.optimizers.Adam(config['learning_rate_classify']),
                        loss='sparse_categorical_crossentropy',
                        metrics=['accuracy'])
+
+    #Robust Label Encoding ---
+    # Use LabelEncoder to handle any label format and convert them to the required 0-indexed format.
+    le = LabelEncoder()
+    labels_tr_encoded = le.fit_transform(labels_tr)
+    labels_te_encoded = le.transform(labels_te)
     
-    # Train the classifier
-    classifier.fit(train_latent_features, labels_tr,
-                   batch_size=config['batch_size'],
-                   epochs=config['epochs_classify'],
-                   shuffle=True,
-                   validation_data=(test_latent_features, labels_te),
-                   verbose=2) # Use verbose=2 for one line per epoch
-    # Evaluate the final model
-    logger.info("Evaluating the classifier on the test set...")
-    predictions = np.argmax(classifier.predict(test_latent_features), axis=1)
-    accuracy = accuracy_score(labels_te, predictions)
-    f1 = f1_score(labels_te, predictions, average='weighted')
-    logger.info(f"Test Accuracy: {accuracy:.4f}")
-    logger.info(f"Test F1 Score: {f1:.4f}")
+    classifier.fit(
+        train_features_fused,
+        labels_tr_encoded,  # Use the new encoded labels
+        epochs=config['epochs_classify'],
+        batch_size=config['batch_size'],
+        shuffle=True,
+        validation_data=(test_features_fused, labels_te_encoded), # Use the new encoded labels
+        verbose=1
+    )
+
+    # Evaluate the Final Model ---
+    logging.info("Evaluating the final model on the test set...")
+    predictions = np.argmax(classifier.predict(test_features_fused), axis=1)
+    
+    # Use the encoded labels for calculating metrics
+    accuracy = accuracy_score(labels_te_encoded, predictions)
+    f1 = f1_score(labels_te_encoded, predictions, average='macro') # 'macro' is good for class imbalance
+    
+    logging.info("\n--- FINAL RESULTS ---")
+    logging.info(f"Accuracy on Test Set: {accuracy:.4f}")
+    logging.info(f"Macro F1-Score on Test Set: {f1:.4f}")
+    logging.info("---------------------\n")
+
 
 def run(config):
     """
     Main function to run the complete training and evaluation pipeline.
-
-    Args:
-        config (dict): A dictionary of configuration parameters.
     """
-    # Load data
-    data_tr_list, data_te_list, labels_tr, labels_te = features.load_and_preprocess_data(
-        config['data_path'], config['view_list']
-    )
-    if data_tr_list is None:
-        return
-
-    # Pre-train encoders on each omics view
-    encoders = pretrain_encoders(data_tr_list, config)
+    logging.info(f"Using configuration for {config['data_path'].split(os.sep)[-1]} dataset.")
     
-    # Train and evaluate the final classifier on concatenated features
-    train_classifier(encoders, data_tr_list, data_te_list, labels_tr, labels_te, config)
+    # Load and preprocess data
+    data_tr_list, data_te_list, labels_tr, labels_te = features.load_and_preprocess_data(config['data_path'], config['view_list'])
+    
+    if data_tr_list: # Check if data was loaded successfully
+        # 1. Pre-train encoders on each view
+        encoders = pretrain_encoders(data_tr_list, config)
+        
+        # 2. Train the final classifier on the fused latent features
+        train_classifier(encoders, data_tr_list, data_te_list, labels_tr, labels_te, config)
+        
+    logging.info("Training and evaluation complete.")
