@@ -180,7 +180,7 @@ if __name__ == "__main__":
                         action='store_true', 
                         help='Save the latent and reconstructed features to CSV files.')
 
-    # --- [NEW] Arguments for advanced models ---
+    # Arguments for advanced models 
     parser.add_argument('--denoising-noise',
                         type=float,
                         default=None,
