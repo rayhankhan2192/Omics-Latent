@@ -26,8 +26,8 @@ BRCA_CONFIG = {
     "learning_rate_pretrain": 1e-3,
     "learning_rate_classify": 5e-4,
     "batch_size": 64,
-    "epochs_pretrain": 100,  # Default epochs for autoencoders
-    "epochs_classify": 150,  # Default epochs for the final classifier
+    "epochs_pretrain": 150,  # Default epochs for autoencoders
+    "epochs_classify": 200,  # Default epochs for the final classifier
 }
 
 # --- Configuration for the ROSMAP Dataset ---
