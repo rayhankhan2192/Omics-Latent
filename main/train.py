@@ -6,13 +6,13 @@ from sklearn.metrics import accuracy_score, f1_score
 from sklearn.preprocessing import LabelEncoder
 import logging
 
-# Local imports
 from main import features
 from main import models
-
+import matplotlib.pyplot as plt
+import logging
+logger = logging.getLogger("Training Module")
 # --- Setup Logging ---
-logger = logging.getLogger(__name__)
-logging.basicConfig(level=logging.INFO, format='INFO:%(name)s:%(message)s')
+logging.basicConfig(level=logging.INFO, format='INFO:%(module)s:%(message)s')
 
 
 def pretrain_encoders(data_tr_list, config):
@@ -20,64 +20,28 @@ def pretrain_encoders(data_tr_list, config):
     Trains an autoencoder for each omics view in an unsupervised manner.
     """
     encoders = []
-    decoders = []
+    decoders = [] 
     
-    noise_factor = config.get('denoising_noise_factor', None)
-    l1_reg = config.get('sparsity_l1_reg', None)
-    
-    if noise_factor:
-        logger.info(f"--- Denoising Autoencoder enabled (Noise Factor: {noise_factor}) ---")
-    if l1_reg:
-        logger.info(f"--- Sparse Autoencoder enabled (L1 Penalty: {l1_reg}) ---")
-
     for i, data_tr in enumerate(data_tr_list):
-        logger.info(f"... Pre-training autoencoder for view {i+1} ...")
+        logging.info(f"... Pre-training autoencoder for view {i+1} ...")
         input_dim = data_tr.shape[1]
         
-        # Option 1: Standard (or Sparse/Denoising) Autoencoder 
-        autoencoder, encoder, decoder = models.create_autoencoder(
-            input_dim, 
-            latent_dim=config['latent_dim'],
-            sparsity_l1_reg=l1_reg
-        )
-        
-        # Option 2: Variational (or Sparse/Denoising) Autoencoder 
-        # autoencoder, encoder, decoder = models.create_vae(
-        #     input_dim, 
-        #     latent_dim=config['latent_dim'],
-        #     sparsity_l1_reg=l1_reg
-        # )
+        autoencoder, encoder, decoder = models.create_autoencoder(input_dim, latent_dim=config['latent_dim'])
         
         autoencoder.compile(optimizer=tf.keras.optimizers.Adam(config['learning_rate_pretrain']), loss='mse')
         
-        if noise_factor and noise_factor > 0:
-            # Create a "noisy" version of the input data
-            data_tr_noisy = tf.keras.layers.Dropout(noise_factor)(data_tr, training=True)
-            
-            logger.info("Training Denoising AE: Input=Noisy Data, Target=Clean Data")
-            autoencoder.fit(
-                data_tr_noisy,
-                data_tr,
-                epochs=config['epochs_pretrain'],
-                batch_size=config['batch_size'],
-                shuffle=True,
-                verbose=1
-            )
-        else:
-            logger.info("Training Standard/Sparse AE: Input=Clean Data, Target=Clean Data")
-            autoencoder.fit(
-                data_tr,
-                data_tr,
-                epochs=config['epochs_pretrain'],
-                batch_size=config['batch_size'],
-                shuffle=True,
-                verbose=1
-            )
-        
+        autoencoder.fit(
+            data_tr, data_tr,
+            epochs=config['epochs_pretrain'],
+            batch_size=config['batch_size'],
+            shuffle=True,
+            verbose=1
+        )
         encoders.append(encoder)
-        decoders.append(decoder)
+        decoders.append(decoder) 
         
-    logger.info("All autoencoders pre-trained successfully.")
+    logging.info("All autoencoders pre-trained successfully.")
+    
     return encoders, decoders
 
 
@@ -85,7 +49,6 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
     """
     Extracts latent features, fuses them, and trains a final classifier.
     """
-    # --- Extract and Fuse Latent Features ---
     logger.info("Extracting and fusing latent features...")
     
     train_latent_features_list = []
@@ -133,60 +96,123 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
 
     # --- Train the Classifier ---
     logger.info("Training the final classifier...")
-    classifier_input_dim = train_features_fused.shape[1]
     
-    # Option 1: Standard Classifier (Now with L2 reg)
-    # logger.info("Using standard MLP classifier with L2 regularization.")
-    # classifier = models.create_classifier(classifier_input_dim, config['num_classes'])
     
-    # --- Option 2: Attention Classifier ---
-    # [NEW] Switched to Attention Classifier as the default
-    logger.info("Using Attention classifier.")
+    # Option 1: Enhanced Attention Fusion (Single-input model)
+    logger.info("Using Enhanced Attention Fusion Classifier.")
     num_views = len(data_tr_list)
     latent_dim_per_view = config['latent_dim']
-    classifier = models.create_attention_classifier(num_views, latent_dim_per_view, config['num_classes'])
+    classifier = models.create_graph_classifier(num_views, latent_dim_per_view, config['num_classes'])
+    
+    # Prepare data for single-input model
+    train_data = train_features_fused
+    test_data = test_features_fused
+    
+    # Option 2: Hybrid CNN-Attention (Multi-input model) - UNCOMMENT TO USE
+    # logger.info("Using Hybrid CNN-Attention Classifier.")
+    # num_views = len(data_tr_list)
+    # latent_dim_per_view = config['latent_dim']
+    # classifier = models.create_cross_view_interaction_classifier(num_views, latent_dim_per_view, config['num_classes'])
+    
+    # # Prepare data for multi-input model
+    # train_data = train_latent_features_list
+    # test_data = test_latent_features_list
 
-    classifier.compile(optimizer=tf.keras.optimizers.Adam(config['learning_rate_classify']),
-                       loss='sparse_categorical_crossentropy',
-                       metrics=['accuracy'])
-
-    # Robust Label Encoding 
+    # === Encode Labels ===
     le = LabelEncoder()
     labels_tr_encoded = le.fit_transform(labels_tr)
     labels_te_encoded = le.transform(labels_te)
 
-    # Increased patience from 15 to 25
+    # === Enhanced Callbacks ===
     early_stopper = tf.keras.callbacks.EarlyStopping(
-        monitor='val_loss',
-        patience=25,
-        verbose=1,
-        restore_best_weights=True
+        monitor="val_loss",
+        patience=25,  # Increased patience
+        restore_best_weights=True,
+        min_delta=0.001,
+        verbose=1
     )
-    # This layer is only "active" during training
-    noise_layer = tf.keras.layers.GaussianNoise(0.1)
-    train_features_fused_noisy = noise_layer(train_features_fused, training=True)
     
-    classifier.fit(
-        train_features_fused_noisy, 
-        labels_tr_encoded,
-        epochs=config['epochs_classify'],
-        batch_size=config['batch_size'],
-        shuffle=True,
-        validation_data=(test_features_fused, labels_te_encoded), 
-        verbose=1,
-        callbacks=[early_stopper] 
+    lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(
+        monitor="val_loss",
+        factor=0.5,
+        patience=20,
+        min_lr=1e-6,
+        verbose=1
+    )
+    
+    # NEW: Stop if training loss gets suspiciously low (sign of severe overfitting)
+    overfitting_stopper = tf.keras.callbacks.EarlyStopping(
+        monitor="loss",
+        patience=20,
+        mode='min',
+        baseline=0.05,  # If training loss < 0.05, likely overfitting
+        restore_best_weights=False,
+        verbose=1
     )
 
+    # === Compile with Lower Learning Rate ===
+    optimizer = tf.keras.optimizers.Adam(learning_rate=config['learning_rate_classify'] * 0.5)  # Half the LR
+    classifier.compile(
+        optimizer=optimizer,
+        loss='sparse_categorical_crossentropy',
+        metrics=['accuracy']
+    )
+
+    # === Train WITHOUT adding extra noise (the model already has enough regularization) ===
+    logger.info("Starting classifier training...")
+    history = classifier.fit(
+        train_data,
+        labels_tr_encoded,
+        validation_data=(test_data, labels_te_encoded),
+        epochs=config["epochs_classify"],
+        batch_size=config["batch_size"],
+        callbacks=[early_stopper, lr_scheduler, overfitting_stopper],
+        shuffle=True,
+        verbose=1
+    )
+
+    # === Evaluate ===
     logger.info("Evaluating the final model (from best epoch) on the test set...")
-    predictions = np.argmax(classifier.predict(test_features_fused), axis=1)
-    
+    predictions = np.argmax(classifier.predict(test_data), axis=1)
     accuracy = accuracy_score(labels_te_encoded, predictions)
-    f1 = f1_score(labels_te_encoded, predictions, average='macro')
-    
+    f1 = f1_score(labels_te_encoded, predictions, average="macro")
+
     logger.info("\n--- FINAL RESULTS ---")
     logger.info(f"Accuracy on Test Set: {accuracy:.4f}")
     logger.info(f"Macro F1-Score on Test Set: {f1:.4f}")
     logger.info("---------------------\n")
+
+    # === Plot Training History ===
+    import matplotlib.pyplot as plt
+
+    plt.figure(figsize=(12, 4))
+    
+    # Accuracy subplot
+    plt.subplot(1, 2, 1)
+    plt.plot(history.history['accuracy'], label='Train Accuracy', linewidth=2)
+    plt.plot(history.history['val_accuracy'], label='Validation Accuracy', linewidth=2)
+    plt.title('Accuracy Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('Accuracy')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    
+    # Loss subplot
+    plt.subplot(1, 2, 2)
+    plt.plot(history.history['loss'], label='Train Loss', linewidth=2)
+    plt.plot(history.history['val_loss'], label='Validation Loss', linewidth=2)
+    plt.title('Loss Curves')
+    plt.xlabel('Epochs')
+    plt.ylabel('Loss')
+    plt.legend()
+    plt.grid(True, linestyle='--', alpha=0.6)
+    
+    plt.tight_layout()
+    plt.savefig("training_curves.png", dpi=300)
+    plt.close()
+
+    classifier.save("final_attention_fusion_classifier.keras")
+    logger.info("Model saved successfully.")
 
 
 def run(config):
@@ -203,4 +229,3 @@ def run(config):
         train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, labels_te, config)
         
     logger.info("Training and evaluation complete.")
-
