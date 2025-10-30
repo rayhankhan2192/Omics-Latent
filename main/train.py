@@ -2,17 +2,19 @@ import os
 import numpy as np
 import pandas as pd
 import tensorflow as tf
-from sklearn.metrics import accuracy_score, f1_score
+from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 from sklearn.preprocessing import LabelEncoder
 import logging
+import seaborn as sns # <-- Added import
+import matplotlib.pyplot as plt
 
 from main import features
 from main import models
-import matplotlib.pyplot as plt
-import logging
-logger = logging.getLogger("Training Module")
+
 # --- Setup Logging ---
+logger = logging.getLogger("Training Module")
 logging.basicConfig(level=logging.INFO, format='INFO:%(module)s:%(message)s')
+
 
 # def pretrain_encoders(data_tr_list, labels_tr, config):
 #     """
@@ -22,14 +24,14 @@ logging.basicConfig(level=logging.INFO, format='INFO:%(module)s:%(message)s')
 #     logger.info("--- Phase 1: Starting SUPERVISED Autoencoder Pre-training ---")
 #     encoders = []
 #     decoders = []
-    
+#     
 #     # Get pre-training specific hyperparameters
 #     lr = config['learning_rate_pretrain']
 #     epochs = config['epochs_pretrain']
 #     batch_size = config['batch_size']
 #     l1_reg = config.get('sparsity_l1', None)
 #     noise_factor = config.get('denoising_noise', 0.0)
-    
+#     
 #     # [NEW] Set a weight for the classification loss.
 #     # This is a key hyperparameter to tune.
 #     # We care more about reconstruction (1.0) than classification (e.g., 0.5)
@@ -39,7 +41,7 @@ logging.basicConfig(level=logging.INFO, format='INFO:%(module)s:%(message)s')
 #         view_num = config['view_list'][i]
 #         input_dim = data_tr.shape[1]
 #         logger.info(f"Training Supervised AE for view {view_num} (Input dim: {input_dim})...")
-        
+#         
 #         # --- Model Creation ---
 #         # [FIX] Call the new supervised model
 #         autoencoder, encoder, decoder = models.create_supervised_autoencoder(
@@ -84,7 +86,7 @@ logging.basicConfig(level=logging.INFO, format='INFO:%(module)s:%(message)s')
 #             shuffle=True,
 #             verbose=2
 #         )
-        
+#         
 #         encoders.append(encoder)
 #         decoders.append(decoder)
 #         logger.info(f"View {view_num} pre-training complete.")
@@ -252,20 +254,42 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
     # === Evaluate ===
     logger.info("Evaluating the final model (from best epoch) on the test set...")
     predictions = np.argmax(classifier.predict(test_data), axis=1)
+    
+    # --- Calculate Metrics ---
     accuracy = accuracy_score(labels_te_encoded, predictions)
     f1 = f1_score(labels_te_encoded, predictions, average="macro")
 
+    # --- [NEW] Classification Report ---
+    # Get class names from the label encoder
+    class_names = [str(c) for c in le.classes_] 
+    report = classification_report(labels_te_encoded, predictions, target_names=class_names)
+    
     logger.info("\n--- FINAL RESULTS ---")
     logger.info(f"Accuracy on Test Set: {accuracy:.4f}")
     logger.info(f"Macro F1-Score on Test Set: {f1:.4f}")
     logger.info("---------------------\n")
-    logger.info("Classifier report:")
-    from sklearn.metrics import classification_report
-    logger.info("\n" + classification_report(labels_te_encoded, predictions, target_names=le.classes_))
+    logger.info("\n--- Classification Report ---")
+    logger.info(f"\n{report}") # Log the full report
+    logger.info("-----------------------------\n")
+
+    # --- [NEW] Confusion Matrix Plot ---
+    logger.info("Generating confusion matrix plot...")
+    cm = confusion_matrix(labels_te_encoded, predictions)
+    
+    plt.figure(figsize=(8, 6))
+    sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", 
+                xticklabels=class_names, yticklabels=class_names)
+    plt.title("Confusion Matrix")
+    plt.ylabel('Actual Label')
+    plt.xlabel('Predicted Label')
+    plt.tight_layout()
+    plt.savefig("confusion_matrix.png", dpi=300)
+    plt.close() # Close this plot to not interfere with the next one
+    logger.info("Confusion matrix saved to confusion_matrix.png")
+
 
     # === Plot Training History ===
-    import matplotlib.pyplot as plt
-
+    # (This is the original plotting code)
     plt.figure(figsize=(12, 4))
     
     # Accuracy subplot
@@ -290,7 +314,8 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
     
     plt.tight_layout()
     plt.savefig("training_curves.png", dpi=300)
-    plt.close()
+    plt.close() # Close this plot
+    logger.info("Training curves saved to training_curves.png")
 
     classifier.save("final_attention_fusion_classifier.keras")
     logger.info("Model saved successfully.")

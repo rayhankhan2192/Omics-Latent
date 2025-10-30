@@ -31,7 +31,7 @@ ROSMAP_CONFIG = {
     # Default Training Hyperparameters ---
     "learning_rate_pretrain": 1e-3,
     "learning_rate_classify": 5e-4,
-    "batch_size": 128,
+    "batch_size": 32,
     "epochs_pretrain": 100,
     "epochs_classify": 100,
 
