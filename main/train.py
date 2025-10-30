@@ -14,6 +14,84 @@ logger = logging.getLogger("Training Module")
 # --- Setup Logging ---
 logging.basicConfig(level=logging.INFO, format='INFO:%(module)s:%(message)s')
 
+# def pretrain_encoders(data_tr_list, labels_tr, config):
+#     """
+#     Trains a SUPERVISED autoencoder for each view in the dataset.
+#     This forces the latent space to be good for classification.
+#     """
+#     logger.info("--- Phase 1: Starting SUPERVISED Autoencoder Pre-training ---")
+#     encoders = []
+#     decoders = []
+    
+#     # Get pre-training specific hyperparameters
+#     lr = config['learning_rate_pretrain']
+#     epochs = config['epochs_pretrain']
+#     batch_size = config['batch_size']
+#     l1_reg = config.get('sparsity_l1', None)
+#     noise_factor = config.get('denoising_noise', 0.0)
+    
+#     # [NEW] Set a weight for the classification loss.
+#     # This is a key hyperparameter to tune.
+#     # We care more about reconstruction (1.0) than classification (e.g., 0.5)
+#     classification_weight = 0.5 
+
+#     for i, data_tr in enumerate(data_tr_list):
+#         view_num = config['view_list'][i]
+#         input_dim = data_tr.shape[1]
+#         logger.info(f"Training Supervised AE for view {view_num} (Input dim: {input_dim})...")
+        
+#         # --- Model Creation ---
+#         # [FIX] Call the new supervised model
+#         autoencoder, encoder, decoder = models.create_supervised_autoencoder(
+#             input_dim, 
+#             latent_dim=config['latent_dim'],
+#             num_classes=config['num_classes'], # Pass num_classes
+#             sparsity_l1_reg=l1_reg
+#         )
+
+#         # --- Compile ---
+#         # [FIX] Compile with two losses and weights
+#         autoencoder.compile(
+#             optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
+#             loss={
+#                 'decoder': 'mse', # <-- CORRECTED
+#                 'classifier_output': 'sparse_categorical_crossentropy'
+#             },
+#             loss_weights={
+#                 'decoder': 1.0, # <-- CORRECTED
+#                 'classifier_output': classification_weight
+#             },
+#             metrics={'classifier_output': 'accuracy'} # Optional: monitor accuracy
+#         )
+
+#         # --- Prepare Data (add noise if Denoising AE) ---
+#         train_data_input = data_tr
+#         if noise_factor > 0:
+#             logger.info(f"Applying denoising noise (factor: {noise_factor})")
+#             noise = np.random.normal(loc=0.0, scale=noise_factor, size=data_tr.shape)
+#             train_data_input = data_tr + noise
+
+#         # --- Train ---
+#         # [FIX] Fit the model with TWO targets
+#         autoencoder.fit(
+#             train_data_input,  # Input (potentially noisy)
+#             {
+#                 'decoder': data_tr,       # Target 1: clean data (CORRECTED)
+#                 'classifier_output': labels_tr   # Target 2: the labels
+#             },
+#             epochs=epochs,
+#             batch_size=batch_size,
+#             shuffle=True,
+#             verbose=2
+#         )
+        
+#         encoders.append(encoder)
+#         decoders.append(decoder)
+#         logger.info(f"View {view_num} pre-training complete.")
+
+#     logger.info("--- All Supervised Autoencoders Pre-trained Successfully ---")
+#     return encoders, decoders
+
 
 def pretrain_encoders(data_tr_list, config):
     """
@@ -102,7 +180,7 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
     logger.info("Using Enhanced Attention Fusion Classifier.")
     num_views = len(data_tr_list)
     latent_dim_per_view = config['latent_dim']
-    classifier = models.create_graph_classifier(num_views, latent_dim_per_view, config['num_classes'])
+    classifier = models.create_attention_fusion_classifier(num_views, latent_dim_per_view, config['num_classes'])
     
     # Prepare data for single-input model
     train_data = train_features_fused
@@ -112,7 +190,7 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
     # logger.info("Using Hybrid CNN-Attention Classifier.")
     # num_views = len(data_tr_list)
     # latent_dim_per_view = config['latent_dim']
-    # classifier = models.create_cross_view_interaction_classifier(num_views, latent_dim_per_view, config['num_classes'])
+    # classifier = models.create_multi_branch_cnn_classifier(num_views, latent_dim_per_view, config['num_classes'])
     
     # # Prepare data for multi-input model
     # train_data = train_latent_features_list
@@ -126,16 +204,16 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
     # === Enhanced Callbacks ===
     early_stopper = tf.keras.callbacks.EarlyStopping(
         monitor="val_loss",
-        patience=25,  # Increased patience
+        patience=40,  # Increased patience
         restore_best_weights=True,
-        min_delta=0.001,
+        min_delta=0.0001,
         verbose=1
     )
     
     lr_scheduler = tf.keras.callbacks.ReduceLROnPlateau(
         monitor="val_loss",
         factor=0.5,
-        patience=20,
+        patience=30,
         min_lr=1e-6,
         verbose=1
     )
@@ -143,7 +221,7 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
     # NEW: Stop if training loss gets suspiciously low (sign of severe overfitting)
     overfitting_stopper = tf.keras.callbacks.EarlyStopping(
         monitor="loss",
-        patience=20,
+        patience=30,
         mode='min',
         baseline=0.05,  # If training loss < 0.05, likely overfitting
         restore_best_weights=False,
@@ -225,6 +303,7 @@ def run(config):
     
     if data_tr_list:
         encoders, decoders = pretrain_encoders(data_tr_list, config)
+        #encoders, decoders = pretrain_encoders(data_tr_list, labels_tr, config)
         
         train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, labels_te, config)
         
