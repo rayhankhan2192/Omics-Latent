@@ -259,6 +259,9 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
     logger.info(f"Accuracy on Test Set: {accuracy:.4f}")
     logger.info(f"Macro F1-Score on Test Set: {f1:.4f}")
     logger.info("---------------------\n")
+    logger.info("Classifier report:")
+    from sklearn.metrics import classification_report
+    logger.info("\n" + classification_report(labels_te_encoded, predictions, target_names=le.classes_))
 
     # === Plot Training History ===
     import matplotlib.pyplot as plt
