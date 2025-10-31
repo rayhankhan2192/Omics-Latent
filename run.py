@@ -11,12 +11,12 @@ BRCA_CONFIG = {
     "data_path": os.path.join("DataSet", "BRCA"),
     "view_list": [1, 2, 3],
     "num_classes": 5,
-    "latent_dim": 128,
+    "latent_dim": 96,
     
     # Default Training Hyperparameters ---
     "learning_rate_pretrain": 1e-3,
     "learning_rate_classify": 5e-4,
-    "batch_size": 32,
+    "batch_size": 64,
     "epochs_pretrain": 100,
     "epochs_classify": 100,
     "denoising_noise_factor": None, # e.g., 0.2 (20% noise)
