@@ -1,6 +1,8 @@
 import tensorflow as tf
-
-# --- Option 3: Supervised Autoencoder (Corrected) ---
+import logging
+logger = logging.getLogger("Training Module")
+logging.basicConfig(level=logging.INFO, format='INFO:%(module)s:%(message)s')
+# Supervised Autoencoder
 def create_supervised_autoencoder(input_dim, latent_dim, num_classes, sparsity_l1_reg=None):
     """
     Creates a SUPERVISED Autoencoder.
@@ -11,7 +13,7 @@ def create_supervised_autoencoder(input_dim, latent_dim, num_classes, sparsity_l
     
     l1_regularizer = tf.keras.regularizers.l1(sparsity_l1_reg) if sparsity_l1_reg else None
 
-    # --- 1. Build the Encoder ---
+    # Build the Encoder
     encoder_inputs = tf.keras.layers.Input(shape=(input_dim,), name='encoder_input')
     x = tf.keras.layers.Dense(512, activation='relu')(encoder_inputs)
     x = tf.keras.layers.Dropout(0.3)(x)
@@ -26,7 +28,7 @@ def create_supervised_autoencoder(input_dim, latent_dim, num_classes, sparsity_l
     # Stand-alone encoder model
     encoder = tf.keras.models.Model(encoder_inputs, z, name='encoder')
 
-    # --- 2. Build the Decoder ---
+    # Build the Decoder 
     latent_inputs = tf.keras.layers.Input(shape=(latent_dim,), name='decoder_input')
     x_dec = tf.keras.layers.Dense(256, activation='relu')(latent_inputs)
     x_dec = tf.keras.layers.Dropout(0.3)(x_dec)
@@ -36,16 +38,16 @@ def create_supervised_autoencoder(input_dim, latent_dim, num_classes, sparsity_l
     # Stand-alone decoder model
     decoder = tf.keras.models.Model(latent_inputs, reconstruction, name='decoder')
     
-    # --- 3. Build the Classifier Head ---
+    #  Build the Classifier Head
     classifier_output = tf.keras.layers.Dense(
         num_classes, 
         activation='softmax', 
         name='classifier_output'
     )(z)
 
-    # --- 4. Build the Full Supervised AE (THE FIX) ---
+    # Build the Full Supervised AE
     
-    # [FIX] Connect the encoder's output 'z' to the 'decoder' model
+    # Connect the encoder's output 'z' to the 'decoder' model
     # This creates the reconstruction output for *this* model
     reconstruction_for_autoencoder = decoder(z)
     
@@ -94,7 +96,7 @@ def create_autoencoder(input_dim, latent_dim=128, sparsity_l1_reg=None):
     
     encoder = tf.keras.models.Model(inputs=input_layer, outputs=latent_space, name='encoder')
 
-    # --- Decoder ---
+    # Decoder 
     decoder_input = tf.keras.layers.Input(shape=(latent_dim,), name='decoder_input')
     decoded = tf.keras.layers.Dense(256, activation='relu')(decoder_input)
     decoded = tf.keras.layers.Dropout(0.3)(decoded)
@@ -103,7 +105,7 @@ def create_autoencoder(input_dim, latent_dim=128, sparsity_l1_reg=None):
     
     decoder = tf.keras.models.Model(inputs=decoder_input, outputs=reconstruction, name='decoder')
 
-    # Full Autoencoder ---
+    # Full Autoencoder 
     autoencoder_output = decoder(encoder(input_layer))
     autoencoder = tf.keras.models.Model(inputs=input_layer, outputs=autoencoder_output, name='autoencoder')
     
@@ -140,7 +142,7 @@ def create_classifier(input_dim, num_classes):
     return classifier
 
 
-# Additional Advanced Models ---
+# Additional Advanced Models 
 
 class Sampling(tf.keras.layers.Layer):
     """Custom layer for the reparameterization trick in VAEs."""
@@ -185,7 +187,7 @@ def create_vae(input_dim, latent_dim=128, sparsity_l1_reg=None):
     # Create the regularizer if provided
     l1_regularizer = tf.keras.regularizers.l1(sparsity_l1_reg) if sparsity_l1_reg else None
 
-    # 1. Build the Encoder ---
+    # Build the Encoder
     encoder_inputs = tf.keras.layers.Input(shape=(input_dim,), name='vae_encoder_input')
     x = tf.keras.layers.Dense(512, activation='relu')(encoder_inputs)
     x = tf.keras.layers.Dropout(0.3)(x)
@@ -214,9 +216,9 @@ def create_vae(input_dim, latent_dim=128, sparsity_l1_reg=None):
     # Return all three models
     return vae, encoder, decoder
 
-# ----- classifier models for fused latent features -----
+# classifier models for fused latent features
 
-# ------ Best Performing Advanced Classifier Models ------
+# Best Performing Advanced Classifier Models
 def create_graph_classifier(num_views, latent_dim_per_view, num_classes, num_neighbors=10):
     """
     Graph-based classifier: treats samples as nodes in a similarity graph.
@@ -272,7 +274,7 @@ def create_attention_fusion_classifier(num_views, latent_dim_per_view, num_class
 
 
 
-# ---- Tested simpler attention classifier ----
+# Tested simpler attention classifier
 
 def create_attention_classifier(num_views, latent_dim_per_view, num_classes):
     """Creates a classifier with an attention mechanism to weigh different omics views."""
@@ -293,7 +295,7 @@ def create_attention_classifier(num_views, latent_dim_per_view, num_classes):
     
     return classifier
 
-# new optimized version (commented out for reference)
+# new optimized version
 
 def create_attention_fusion_classifier2(num_views, latent_dim_per_view, num_classes):
     """
@@ -303,7 +305,7 @@ def create_attention_fusion_classifier2(num_views, latent_dim_per_view, num_clas
     input_layer = tf.keras.layers.Input(shape=(num_views * latent_dim_per_view,))
     reshaped = tf.keras.layers.Reshape((num_views, latent_dim_per_view))(input_layer)
     
-    # IMPROVEMENT 1: Project each view to a common lower-dimensional space first
+    # Project each view to a common lower-dimensional space first
     view_projection = tf.keras.layers.Dense(
         128, 
         activation='relu',
@@ -311,7 +313,7 @@ def create_attention_fusion_classifier2(num_views, latent_dim_per_view, num_clas
     )
     projected = tf.keras.layers.TimeDistributed(view_projection)(reshaped)
     
-    # IMPROVEMENT 2: Single-head attention with reduced key_dim
+    # Single-head attention with reduced key_dim
     att = tf.keras.layers.MultiHeadAttention(
         num_heads=1, 
         key_dim=32,
@@ -319,7 +321,7 @@ def create_attention_fusion_classifier2(num_views, latent_dim_per_view, num_clas
     )(projected, projected)
     pooled = tf.keras.layers.GlobalAveragePooling1D()(att)
     
-    # IMPROVEMENT 3: Much simpler classifier head
+    # Much simpler classifier head
     x = tf.keras.layers.Dropout(0.5)(pooled)
     x = tf.keras.layers.Dense(
         32, 
@@ -331,7 +333,7 @@ def create_attention_fusion_classifier2(num_views, latent_dim_per_view, num_clas
 
     return tf.keras.models.Model(inputs=input_layer, outputs=out, name="attention_fusion_classifier")
 
-# Option 5: Multi-Branch 1D-CNN Classifier
+# Multi-Branch 1D-CNN Classifier
 def create_multi_branch_cnn_classifier(num_views, latent_dim_per_view, num_classes):
 
     def create_cnn_branch(input_shape, name):
@@ -473,7 +475,7 @@ def create_optimized_moe_classifier(num_views, latent_dim_per_view, num_classes)
     return tf.keras.models.Model(inputs=inputs, outputs=output, name="optimized_moe")
 
 
-# 1. Ensemble of Shallow Models 
+# Ensemble of Shallow Models 
 def create_ensemble_classifier(num_views, latent_dim_per_view, num_classes):
     """
     Ensemble of multiple shallow architectures.
@@ -482,18 +484,18 @@ def create_ensemble_classifier(num_views, latent_dim_per_view, num_classes):
     
     input_layer = tf.keras.layers.Input(shape=(num_views * latent_dim_per_view,))
     
-    # Branch 1: Simple MLP
+    # Simple MLP
     mlp = tf.keras.layers.Dense(64, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-3))(input_layer)
     mlp = tf.keras.layers.Dropout(0.4)(mlp)
     mlp = tf.keras.layers.Dense(32, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-3))(mlp)
     
-    # Branch 2: Feature attention
+    # Feature attention
     reshaped = tf.keras.layers.Reshape((num_views, latent_dim_per_view))(input_layer)
     att = tf.keras.layers.MultiHeadAttention(num_heads=1, key_dim=32)(reshaped, reshaped)
     att = tf.keras.layers.GlobalAveragePooling1D()(att)
     att = tf.keras.layers.Dense(32, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(1e-3))(att)
     
-    # Branch 3: Gated fusion
+    # Gated fusion
     gate = tf.keras.layers.Dense(num_views, activation='softmax')(tf.keras.layers.Flatten()(reshaped))
     gate = tf.keras.layers.RepeatVector(latent_dim_per_view)(gate)
     gate = tf.keras.layers.Permute((2, 1))(gate)
@@ -512,7 +514,6 @@ def create_ensemble_classifier(num_views, latent_dim_per_view, num_classes):
     return tf.keras.models.Model(inputs=input_layer, outputs=output, name="ensemble_classifier")
 
 # Cross-View Feature Interaction Network
-# good
 def create_cross_view_interaction_classifier(num_views, latent_dim_per_view, num_classes):
     """
     Models pairwise interactions between omics views.
@@ -603,9 +604,6 @@ def create_bayesian_classifier(num_views, latent_dim_per_view, num_classes):
     
     return models.Model(inputs=input_layer, outputs=output, name="bayesian_classifier")
 
-
-# Add to train.py as a new option
-import logging
 from sklearn.metrics import accuracy_score, f1_score
 logger = logging.getLogger(__name__)
 def train_ml_ensemble_classifier(train_features, test_features, labels_tr_encoded, labels_te_encoded):
@@ -654,3 +652,30 @@ def train_ml_ensemble_classifier(train_features, test_features, labels_tr_encode
     
     return ensemble, accuracy, f1
 
+import tensorflow as tf
+
+def create_regularized_mlp_classifier(input_dim, num_classes, l2=1e-4, dropout=0.5):
+    """
+    Simple, robust classifier:
+      - BatchNorm → stabilizes features
+      - Two small Dense layers with L2
+      - High dropout to curb overfitting
+    """
+    inputs = tf.keras.Input(shape=(input_dim,))
+    x = tf.keras.layers.BatchNormalization()(inputs)
+    x = tf.keras.layers.Dense(128, activation='relu',
+                              kernel_regularizer=tf.keras.regularizers.l2(l2))(x)
+    x = tf.keras.layers.Dropout(dropout)(x)
+    x = tf.keras.layers.Dense(64, activation='relu',
+                              kernel_regularizer=tf.keras.regularizers.l2(l2))(x)
+    x = tf.keras.layers.Dropout(dropout)(x)
+    outputs = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
+
+    model = tf.keras.Model(inputs, outputs, name="regularized_mlp_classifier")
+    model.compile(
+        optimizer=tf.keras.optimizers.Adam(1e-3),
+        loss=tf.keras.losses.CategoricalCrossentropy(label_smoothing=0.05),
+        metrics=[tf.keras.metrics.CategoricalAccuracy(name="acc"),
+                 tf.keras.metrics.AUC(name="auc", multi_label=True)]
+    )
+    return model
