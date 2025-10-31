@@ -8,7 +8,7 @@ logging.basicConfig(level=logging.INFO, format='INFO:%(name)s:%(message)s')
 from main import train
 
 BRCA_CONFIG = {
-    "data_path": os.path.join("DataSet", "BRCA"),
+    "data_path": os.path.join("Dataset", "BRCA"),
     "view_list": [1, 2, 3],
     "num_classes": 5,
     "latent_dim": 96,
@@ -23,15 +23,15 @@ BRCA_CONFIG = {
     "sparsity_l1_reg": None,        # e.g., 1e-5 (L1 penalty)
 }
 ROSMAP_CONFIG = {
-    "data_path": os.path.join("DataSet", "ROSMAP"),
+    "data_path": os.path.join("Dataset", "ROSMAP"),
     "view_list": [1, 2, 3],
     "num_classes": 2,
-    "latent_dim": 64,
+    "latent_dim": 50,
     
     # Default Training Hyperparameters ---
     "learning_rate_pretrain": 1e-3,
     "learning_rate_classify": 5e-4,
-    "batch_size": 32,
+    "batch_size": 64,
     "epochs_pretrain": 100,
     "epochs_classify": 100,
 
@@ -89,4 +89,3 @@ if __name__ == "__main__":
     train.run(config_to_run)
 
     logger.info("Experiment finished.")
-

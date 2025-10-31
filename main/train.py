@@ -182,7 +182,7 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
     logger.info("Using Enhanced Attention Fusion Classifier.")
     num_views = len(data_tr_list)
     latent_dim_per_view = config['latent_dim']
-    classifier = models.create_attention_fusion_classifier(num_views, latent_dim_per_view, config['num_classes'])
+    classifier = models.create_attention_fusion_classifier2(num_views, latent_dim_per_view, config['num_classes'])
     
     # Prepare data for single-input model
     train_data = train_features_fused
@@ -192,7 +192,7 @@ def train_classifier(encoders, decoders, data_tr_list, data_te_list, labels_tr, 
     # logger.info("Using Hybrid CNN-Attention Classifier.")
     # num_views = len(data_tr_list)
     # latent_dim_per_view = config['latent_dim']
-    # classifier = models.create_multi_branch_cnn_classifier(num_views, latent_dim_per_view, config['num_classes'])
+    # classifier = models.create_hybrid_cnn_attention_classifier(num_views, latent_dim_per_view, config['num_classes'])
     
     # # Prepare data for multi-input model
     # train_data = train_latent_features_list

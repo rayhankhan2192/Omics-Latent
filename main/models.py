@@ -305,9 +305,9 @@ def create_attention_fusion_classifier2(num_views, latent_dim_per_view, num_clas
     
     # IMPROVEMENT 1: Project each view to a common lower-dimensional space first
     view_projection = tf.keras.layers.Dense(
-        64, 
+        128, 
         activation='relu',
-        kernel_regularizer=tf.keras.regularizers.l2(1e-3)
+        #kernel_regularizer=tf.keras.regularizers.l2(1e-3)
     )
     projected = tf.keras.layers.TimeDistributed(view_projection)(reshaped)
     
@@ -315,7 +315,7 @@ def create_attention_fusion_classifier2(num_views, latent_dim_per_view, num_clas
     att = tf.keras.layers.MultiHeadAttention(
         num_heads=1, 
         key_dim=32,
-        dropout=0.3
+        dropout=0.5
     )(projected, projected)
     pooled = tf.keras.layers.GlobalAveragePooling1D()(att)
     
@@ -653,5 +653,4 @@ def train_ml_ensemble_classifier(train_features, test_features, labels_tr_encode
     logger.info(f"F1-Score: {f1:.4f}")
     
     return ensemble, accuracy, f1
-
 
