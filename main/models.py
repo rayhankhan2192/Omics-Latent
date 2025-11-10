@@ -1,6 +1,6 @@
 import tensorflow as tf
 
-# --- Option 3: Supervised Autoencoder (Corrected) ---
+# 3: Supervised Autoencoder (Corrected) ---
 def create_supervised_autoencoder(input_dim, latent_dim, num_classes, sparsity_l1_reg=None):
     """
     Creates a SUPERVISED Autoencoder.
@@ -11,7 +11,7 @@ def create_supervised_autoencoder(input_dim, latent_dim, num_classes, sparsity_l
     
     l1_regularizer = tf.keras.regularizers.l1(sparsity_l1_reg) if sparsity_l1_reg else None
 
-    # --- 1. Build the Encoder ---
+    # 1. Build the Encoder ---
     encoder_inputs = tf.keras.layers.Input(shape=(input_dim,), name='encoder_input')
     x = tf.keras.layers.Dense(512, activation='relu')(encoder_inputs)
     x = tf.keras.layers.Dropout(0.3)(x)
@@ -36,17 +36,13 @@ def create_supervised_autoencoder(input_dim, latent_dim, num_classes, sparsity_l
     # Stand-alone decoder model
     decoder = tf.keras.models.Model(latent_inputs, reconstruction, name='decoder')
     
-    # --- 3. Build the Classifier Head ---
+    #Build the Classifier Head ---
     classifier_output = tf.keras.layers.Dense(
         num_classes, 
         activation='softmax', 
         name='classifier_output'
     )(z)
 
-    # --- 4. Build the Full Supervised AE (THE FIX) ---
-    
-    # [FIX] Connect the encoder's output 'z' to the 'decoder' model
-    # This creates the reconstruction output for *this* model
     reconstruction_for_autoencoder = decoder(z)
     
     # The full model has one input and two outputs,
@@ -216,7 +212,7 @@ def create_vae(input_dim, latent_dim=128, sparsity_l1_reg=None):
 
 # ----- classifier models for fused latent features -----
 
-# ------ Best Performing Advanced Classifier Models ------
+# Best Performing Advanced Classifier Models
 def create_graph_classifier(num_views, latent_dim_per_view, num_classes, num_neighbors=10):
     """
     Graph-based classifier: treats samples as nodes in a similarity graph.
@@ -272,7 +268,7 @@ def create_attention_fusion_classifier(num_views, latent_dim_per_view, num_class
 
 
 
-# ---- Tested simpler attention classifier ----
+# Tested simpler attention classifier
 
 def create_attention_classifier(num_views, latent_dim_per_view, num_classes):
     """Creates a classifier with an attention mechanism to weigh different omics views."""
@@ -514,24 +510,19 @@ def create_ensemble_classifier(num_views, latent_dim_per_view, num_classes):
 # Cross-View Feature Interaction Network
 # good
 def create_cross_view_interaction_classifier(num_views, latent_dim_per_view, num_classes):
-    """
-    Models pairwise interactions between omics views.
-    Useful when different omics have synergistic effects.
-    """
-    from tensorflow.keras import layers, models
-    
+
     inputs = []
     view_embeddings = []
     
     # Embed each view to a common space
     for i in range(num_views):
-        inp = layers.Input(shape=(latent_dim_per_view,), name=f'view_{i+1}')
+        inp = tf.keras.layers.Input(shape=(latent_dim_per_view,), name=f'view_{i+1}')
         inputs.append(inp)
         
         # Project to common embedding space
-        emb = layers.Dense(32, activation='relu',
+        emb = tf.keras.layers.Dense(32, activation='relu',
                           kernel_regularizer=tf.keras.regularizers.l2(1e-3))(inp)
-        emb = layers.BatchNormalization()(emb)
+        emb = tf.keras.layers.BatchNormalization()(emb)
         view_embeddings.append(emb)
     
     # Compute pairwise interactions
@@ -539,46 +530,40 @@ def create_cross_view_interaction_classifier(num_views, latent_dim_per_view, num
     for i in range(num_views):
         for j in range(i + 1, num_views):
             # Element-wise product captures feature interactions
-            interaction = layers.Multiply()([view_embeddings[i], view_embeddings[j]])
+            interaction = tf.keras.layers.Multiply()([view_embeddings[i], view_embeddings[j]])
             interactions.append(interaction)
     
     # Combine individual views and interactions
     all_features = view_embeddings + interactions
-    combined = layers.Concatenate()(all_features)
+    combined = tf.keras.layers.Concatenate()(all_features)
     
     # Classification head
-    x = layers.Dropout(0.5)(combined)
-    x = layers.Dense(48, activation='relu',
+    x = tf.keras.layers.Dropout(0.5)(combined)
+    x = tf.keras.layers.Dense(48, activation='relu',
                      kernel_regularizer=tf.keras.regularizers.l2(1e-3))(x)
-    x = layers.Dropout(0.4)(x)
-    x = layers.Dense(24, activation='relu',
+    x = tf.keras.layers.Dropout(0.4)(x)
+    x = tf.keras.layers.Dense(24, activation='relu',
                      kernel_regularizer=tf.keras.regularizers.l2(1e-3))(x)
-    x = layers.Dropout(0.3)(x)
-    output = layers.Dense(num_classes, activation='softmax')(x)
+    x = tf.keras.layers.Dropout(0.3)(x)
+    output = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
     
-    return models.Model(inputs=inputs, outputs=output, name="cross_view_interaction")
+    return tf.keras.layers.models.Model(inputs=inputs, outputs=output, name="cross_view_interaction")
 
 
 # ABayesian Neural Network (Uncertainty-aware)
 import tensorflow_probability as tfp
 
-def create_bayesian_classifier(num_views, latent_dim_per_view, num_classes):
-    """
-    Bayesian Neural Network with uncertainty quantification.
-    Each prediction comes with a confidence measure.
-    """
-    from tensorflow.keras import layers, models
-    
-    input_layer = layers.Input(shape=(num_views * latent_dim_per_view,))
+def create_bayesian_classifier(num_views, latent_dim_per_view, num_classes):    
+    input_layer = tf.keras.layers.Input(shape=(num_views * latent_dim_per_view,))
     
     # Reshape for view-wise processing
-    reshaped = layers.Reshape((num_views, latent_dim_per_view))(input_layer)
+    reshaped = tf.keras.layers.Reshape((num_views, latent_dim_per_view))(input_layer)
     
     # Simple view processing
-    view_proj = layers.Dense(32, activation='relu',
+    view_proj = tf.keras.layers.Dense(32, activation='relu',
                             kernel_regularizer=tf.keras.regularizers.l2(1e-3))
-    projected = layers.TimeDistributed(view_proj)(reshaped)
-    pooled = layers.GlobalAveragePooling1D()(projected)
+    projected = tf.keras.layers.TimeDistributed(view_proj)(reshaped)
+    pooled = tf.keras.layers.GlobalAveragePooling1D()(projected)
     
     # Bayesian layers (use variational inference)
     x = tfp.layers.DenseVariational(
@@ -588,7 +573,7 @@ def create_bayesian_classifier(num_views, latent_dim_per_view, num_classes):
         kl_weight=1/600,  # 1/num_train_samples
         activation='relu'
     )(pooled)
-    x = layers.Dropout(0.4)(x)
+    x = tf.layers.Dropout(0.4)(x)
     
     x = tfp.layers.DenseVariational(
         24,
@@ -597,11 +582,11 @@ def create_bayesian_classifier(num_views, latent_dim_per_view, num_classes):
         kl_weight=1/600,
         activation='relu'
     )(x)
-    x = layers.Dropout(0.3)(x)
+    x = tf.keras.layers.Dropout(0.3)(x)
     
-    output = layers.Dense(num_classes, activation='softmax')(x)
+    output = tf.keras.layers.Dense(num_classes, activation='softmax')(x)
     
-    return models.Model(inputs=input_layer, outputs=output, name="bayesian_classifier")
+    return tf.keras.layers.models.Model(inputs=input_layer, outputs=output, name="bayesian_classifier")
 
 
 # Add to train.py as a new option
