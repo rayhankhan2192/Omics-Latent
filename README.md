@@ -1,1 +1,1 @@
-# MogonetLatent
+# MultiOmics-Latent Feature
