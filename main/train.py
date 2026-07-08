@@ -9,6 +9,7 @@ from sklearn.model_selection import KFold
 import logging
 import seaborn as sns
 import matplotlib.pyplot as plt
+from sklearn.metrics import roc_auc_score
 
 from main import features
 from main import models
@@ -605,11 +606,70 @@ def get_stacking_callbacks():
     )
     return [early_stopper, lr_scheduler]
 
-def evaluate_and_plot(predictions, labels_te_encoded, history, class_names, file_prefix):
+# def evaluate_and_plot(predictions, labels_te_encoded, history, class_names, file_prefix):
+#     """
+#     Calculates metrics, prints reports, and saves plots, prefixed with scenario name.
+#     """
+#     # --- Calculate Metrics ---
+#     accuracy = accuracy_score(labels_te_encoded, predictions)
+#     f1 = f1_score(labels_te_encoded, predictions, average="macro")
+#     report = classification_report(labels_te_encoded, predictions, target_names=class_names, zero_division=0)
+    
+#     logger.info("\n--- FINAL RESULTS ---")
+#     logger.info(f"Accuracy on Test Set: {accuracy:.4f}")
+#     logger.info(f"Macro F1-Score on Test Set: {f1:.4f}")
+#     logger.info("---------------------\n")
+#     logger.info("\n--- Classification Report ---")
+#     logger.info(f"\n{report}")
+#     logger.info("-----------------------------\n")
+
+#     # --- Confusion Matrix Plot ---
+#     cm_filename = f"{file_prefix}confusion_matrix.png"
+#     logger.info(f"Generating confusion matrix plot... ({cm_filename})")
+#     cm = confusion_matrix(labels_te_encoded, predictions)
+#     plt.figure(figsize=(8, 6))
+#     sns.heatmap(cm, annot=True, fmt="d", cmap="Blues", 
+#                 xticklabels=class_names, yticklabels=class_names)
+#     plt.title(f"{file_prefix} Confusion Matrix")
+#     plt.ylabel('Actual Label')
+#     plt.xlabel('Predicted Label')
+#     plt.tight_layout()
+#     plt.savefig(cm_filename, dpi=300)
+#     plt.close()
+
+#     # === Plot Training History ===
+#     curves_filename = f"{file_prefix}training_curves.png"
+#     logger.info(f"Generating training curves plot... ({curves_filename})")
+#     plt.figure(figsize=(12, 4))
+    
+#     plt.subplot(1, 2, 1)
+#     plt.plot(history.history['accuracy'], label='Train Accuracy', linewidth=2)
+#     plt.plot(history.history['val_accuracy'], label='Validation Accuracy', linewidth=2)
+#     plt.title('Accuracy Curves')
+#     plt.xlabel('Epochs')
+#     plt.ylabel('Accuracy')
+#     plt.legend()
+#     plt.grid(True, linestyle='--', alpha=0.6)
+    
+#     plt.subplot(1, 2, 2)
+#     plt.plot(history.history['loss'], label='Train Loss', linewidth=2)
+#     plt.plot(history.history['val_loss'], label='Validation Loss', linewidth=2)
+#     plt.title('Loss Curves')
+#     plt.xlabel('Epochs')
+#     plt.ylabel('Loss')
+#     plt.legend()
+#     plt.grid(True, linestyle='--', alpha=0.6)
+    
+#     plt.tight_layout()
+#     plt.savefig(curves_filename, dpi=300)
+#     plt.close()
+
+def evaluate_and_plot(predictions, labels_te_encoded, history, class_names, file_prefix, classifier, test_data):
     """
-    Calculates metrics, prints reports, and saves plots, prefixed with scenario name.
+    Calculates operational metrics, computes threshold-independent AUC-ROC scores,
+    prints classification reports, and saves performance plots.
     """
-    # --- Calculate Metrics ---
+    # --- Calculate Standard Metrics ---
     accuracy = accuracy_score(labels_te_encoded, predictions)
     f1 = f1_score(labels_te_encoded, predictions, average="macro")
     report = classification_report(labels_te_encoded, predictions, target_names=class_names, zero_division=0)
@@ -617,6 +677,26 @@ def evaluate_and_plot(predictions, labels_te_encoded, history, class_names, file
     logger.info("\n--- FINAL RESULTS ---")
     logger.info(f"Accuracy on Test Set: {accuracy:.4f}")
     logger.info(f"Macro F1-Score on Test Set: {f1:.4f}")
+    
+    # --- Compute Probabilities for AUC-ROC ---
+    test_probabilities = classifier.predict(test_data)
+    
+    if test_probabilities.shape[1] == 2:
+        # Binary Classification Path for ROSMAP
+        # Extract probabilities for the positive class (column 1)
+        binary_auc = roc_auc_score(labels_te_encoded, test_probabilities[:, 1])
+        logger.info(f"Binary AUC-ROC on Test Set: {binary_auc:.4f}")
+    else:
+        # Multi-Class Classification Path for BRCA
+        # Compute macro-averaged One-vs-Rest AUC-ROC
+        multiclass_auc = roc_auc_score(
+            labels_te_encoded, 
+            test_probabilities, 
+            multi_class="ovr", 
+            average="macro"
+        )
+        logger.info(f"Macro One-vs-Rest AUC-ROC on Test Set: {multiclass_auc:.4f}")
+        
     logger.info("---------------------\n")
     logger.info("\n--- Classification Report ---")
     logger.info(f"\n{report}")
@@ -662,4 +742,3 @@ def evaluate_and_plot(predictions, labels_te_encoded, history, class_names, file
     plt.tight_layout()
     plt.savefig(curves_filename, dpi=300)
     plt.close()
-
