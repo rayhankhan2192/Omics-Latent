@@ -200,7 +200,8 @@ def run_general_classifier(train_latent_list, test_latent_list, labels_tr_encode
     # --- Evaluate ---
     logger.info(f"Evaluating {classifier.name}...")
     predictions = np.argmax(classifier.predict(test_data), axis=1)
-    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "general_")
+    # evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "general_")
+    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "general_", classifier, test_data)
 
 
 # SCENARIO 2: VIEW-LEVEL STACKING CLASSIFIER
@@ -283,7 +284,8 @@ def run_view_stacking_classifier(train_latent_list, test_latent_list, labels_tr_
     # --- Evaluate ---
     logger.info("Evaluating View-Level Stacking model...")
     predictions = np.argmax(meta_classifier.predict(X_test_meta), axis=1)
-    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "view_stacking_")
+    # evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "view_stacking_")
+    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "view_stacking_", classifier, test_data)
 
 
 # SCENARIO 3: MULTI-MODEL (FUSED) STACKING CLASSIFIER
@@ -381,7 +383,8 @@ def run_model_stacking_classifier(train_latent_list, test_latent_list, labels_tr
     # --- Evaluate ---
     logger.info("Evaluating Multi-Model Stacking model...")
     predictions = np.argmax(meta_classifier.predict(X_test_meta), axis=1)
-    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "model_stacking_")
+    # evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "model_stacking_")
+    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "model_stacking_", classifier, test_data)
 
 
 # SCENARIO 4: END-TO-END (LATENT + ORIGINAL) CLASSIFIER
@@ -438,7 +441,8 @@ def run_end_to_end_classifier(data_tr_list, data_te_list, labels_tr_encoded, lab
     # --- Evaluate ---
     logger.info(f"Evaluating {classifier.name}...")
     predictions = np.argmax(classifier.predict(test_data), axis=1)
-    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "end_to_end_")
+    # evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "end_to_end_")
+    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "end_to_end_", classifier, test_data)
 
 
 # SCENARIO 5: HYBRID FUSED LATENT-ORIGINAL CLASSIFIER
