@@ -529,8 +529,8 @@ def run_hybrid_fusion_classifier(data_tr_list, data_te_list,
     # --- 5. Evaluate ---
     logger.info(f"Evaluating {classifier.name}...")
     predictions = np.argmax(classifier.predict(test_data), axis=1)
-    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "hybrid_fusion_")
-
+    # evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "hybrid_fusion_")
+    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "hybrid_fusion_", classifier, test_data)
 
 
 # HELPER FUNCTIONS (UTILITIES)
