@@ -384,7 +384,7 @@ def run_model_stacking_classifier(train_latent_list, test_latent_list, labels_tr
     logger.info("Evaluating Multi-Model Stacking model...")
     predictions = np.argmax(meta_classifier.predict(X_test_meta), axis=1)
     # evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "model_stacking_")
-    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "model_stacking_", classifier, test_data)
+    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "model_stacking_", meta_classifier, X_test_meta)
 
 
 # SCENARIO 4: END-TO-END (LATENT + ORIGINAL) CLASSIFIER
