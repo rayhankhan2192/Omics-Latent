@@ -133,7 +133,11 @@ def run_experiment(config):
                 train_latent_list, test_latent_list,
                 labels_tr_encoded, labels_te_encoded, class_names, config
             )
-
+        elif config['model_type'] == 'pure_original':
+            logger.info("--- Running Scenario 1: Pure Original Baseline Classifier ---")
+            run_pure_original_baseline(
+                data_tr_list, data_te_list, labels_tr_encoded, labels_te_encoded, class_names, config
+            )
     logger.info("Training and evaluation complete.")
 
 
@@ -746,3 +750,25 @@ def evaluate_and_plot(predictions, labels_te_encoded, history, class_names, file
     plt.tight_layout()
     plt.savefig(curves_filename, dpi=300)
     plt.close()
+
+
+def run_pure_original_baseline(data_tr_list, data_te_list, labels_tr_encoded, labels_te_encoded, class_names, config):
+    train_raw_fused = np.concatenate(data_tr_list, axis=1)
+    test_raw_fused = np.concatenate(data_te_list, axis=1)
+    fused_raw_dim = train_raw_fused.shape[1]
+    
+    classifier = models.create_pure_original_baseline(fused_raw_dim, config['num_classes'])
+    optimizer = tf.keras.optimizers.Adam(learning_rate=config['learning_rate_classify'])
+    classifier.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+    
+    weights = class_weight.compute_class_weight('balanced', classes=np.unique(labels_tr_encoded), y=labels_tr_encoded)
+    class_weights_dict = dict(enumerate(weights))
+    
+    history = classifier.fit(
+        train_raw_fused, labels_tr_encoded,
+        validation_data=(test_raw_fused, labels_te_encoded),
+        epochs=config["epochs_classify"], batch_size=config["batch_size"],
+        callbacks=get_default_callbacks(), class_weight=class_weights_dict, verbose=1
+    )
+    predictions = np.argmax(classifier.predict(test_raw_fused), axis=1)
+    evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "pure_original_", classifier, test_raw_fused)    

@@ -203,3 +203,15 @@ def create_end_to_end_model(input_dims, latent_dim_per_view, num_classes):
     )
     
     return model
+
+
+# 5. PURE ORIGINAL BASELINE MODEL (FOR SCENARIO 4)
+
+def create_pure_original_baseline(fused_raw_dim, num_classes):
+    input_layer = tf.keras.layers.Input(shape=(fused_raw_dim,), name="raw_input")
+    x = tf.keras.layers.Dense(256, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(5e-3))(input_layer)
+    x = tf.keras.layers.Dropout(0.6)(x)
+    x = tf.keras.layers.Dense(128, activation='relu', kernel_regularizer=tf.keras.regularizers.l2(5e-3))(x)
+    x = tf.keras.layers.Dropout(0.6)(x)
+    output_layer = tf.keras.layers.Dense(num_classes, activation='softmax', name="raw_output")(x)
+    return tf.keras.models.Model(inputs=input_layer, outputs=output_layer, name="pure_original_baseline")
