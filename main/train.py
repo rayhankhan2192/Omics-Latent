@@ -137,6 +137,11 @@ def run_experiment(config):
             logger.info("--- Running Scenario 1: Pure Original Baseline Classifier ---")
             run_pure_original_baseline(
                 data_tr_list, data_te_list, labels_tr_encoded, labels_te_encoded, class_names, config
+            )        
+        elif config['model_type'] == 'ablation':
+            logger.info("--- Running Scenario: Systematic Architecture Ablation Study ---")
+            run_hybrid_ablation_study(
+                data_tr_list, data_te_list, train_latent_list, test_latent_list, labels_tr_encoded, labels_te_encoded, class_names, config
             )
     logger.info("Training and evaluation complete.")
 
@@ -772,3 +777,80 @@ def run_pure_original_baseline(data_tr_list, data_te_list, labels_tr_encoded, la
     )
     predictions = np.argmax(classifier.predict(test_raw_fused), axis=1)
     evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "pure_original_", classifier, test_raw_fused)    
+
+
+# ablation study for hybrid fusion model
+def run_hybrid_ablation_study(data_tr_list, data_te_list, train_latent_list, test_latent_list, labels_tr_encoded, labels_te_encoded, class_names, config):
+    """
+    Runs the systematic ablation study and prints out the exact formatting 
+    requested for each model variant configuration.
+    """
+    logger.info("--- Starting Systematic Hybrid Ablation Experiment ---")
+    num_views = len(data_tr_list)
+    
+    # 1. Prepare parallel dual-pathway feature arrays
+    train_hybrid = [np.concatenate([data_tr_list[i], train_latent_list[i]], axis=1) for i in range(num_views)]
+    test_hybrid = [np.concatenate([data_te_list[i], test_latent_list[i]], axis=1) for i in range(num_views)]
+    hybrid_dims = [train_hybrid[i].shape[1] for i in range(num_views)]
+    
+    # 2. Extract regularized class weight options
+    weights = class_weight.compute_class_weight('balanced', classes=np.unique(labels_tr_encoded), y=labels_tr_encoded)
+    class_weights_dict = dict(enumerate(weights))
+    
+    # Define variants to evaluate sequentially
+    variants = [
+        {"name": "w/o Class Weighting", "drop_reg": False, "drop_tow": False, "use_weights": False},
+        {"name": "w/o Regularization", "drop_reg": True, "drop_tow": False, "use_weights": True},
+        {"name": "w/o Feature Towers", "drop_reg": False, "drop_tow": True, "use_weights": True}
+    ]
+    
+    for var in variants:
+        logger.info(f"Running Ablation scenario: {var['name']}")
+        
+        # Build specialized network graph
+        model = models.create_ablation_hybrid_model(
+            hybrid_dims, config['latent_dim'], config['num_classes'], 
+            drop_regularization=var['drop_reg'], drop_towers=var['drop_tow']
+        )
+        
+        optimizer = tf.keras.optimizers.Adam(learning_rate=config['learning_rate_classify'])
+        model.compile(optimizer=optimizer, loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+        
+        active_weights = class_weights_dict if var['use_weights'] else None
+        
+        # Fit network to data targets
+        history = model.fit(
+            train_hybrid, labels_tr_encoded,
+            validation_data=(test_hybrid, labels_te_encoded),
+            epochs=config["epochs_classify"],
+            batch_size=config["batch_size"],
+            class_weight=active_weights,
+            verbose=0
+        )
+        
+        # Evaluate performance on test metrics
+        predictions = np.argmax(model.predict(test_hybrid), axis=1)
+        acc = accuracy_score(labels_te_encoded, predictions)
+        macro_f1 = f1_score(labels_te_encoded, predictions, average='macro')
+        
+        # Compute macro One-vs-Rest AUC-ROC dynamically matching classification report layout
+        if config['num_classes'] == 2:
+            prob_out = model.predict(test_hybrid)
+            auc_val = roc_auc_score(labels_te_encoded, prob_out[:, 1])
+            auc_label = "Binary AUC-ROC"
+        else:
+            prob_out = model.predict(test_hybrid)
+            auc_val = roc_auc_score(labels_te_encoded, prob_out, multi_class='ovr', average='macro')
+            auc_label = "Macro One-vs-Rest AUC-ROC"
+            
+        # Print out formatted reports matching user constraints
+        print(f"\n--- FINAL RESULTS ---{var['name']}")
+        print(f"INFO:Training Module:Accuracy on Test Set: {acc:.4f}")
+        print(f"INFO:Training Module:Macro F1-Score on Test Set: {macro_f1:.4f}")
+        print(f"INFO:Training Module:{auc_label} on Test Set: {auc_val:.4f}")
+        print("INFO:Training Module:---------------------")
+        print("\nINFO:Training Module:")
+        print("--- Classification Report ---")
+        print("INFO:Training Module:")
+        print(classification_report(labels_te_encoded, predictions, target_names=class_names))
+        print("\n")

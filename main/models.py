@@ -215,3 +215,53 @@ def create_pure_original_baseline(fused_raw_dim, num_classes):
     x = tf.keras.layers.Dropout(0.6)(x)
     output_layer = tf.keras.layers.Dense(num_classes, activation='softmax', name="raw_output")(x)
     return tf.keras.models.Model(inputs=input_layer, outputs=output_layer, name="pure_original_baseline")
+
+# ==========================================
+# 6. ABLATION STUDY ARCHITECTURES
+# ==========================================
+
+def create_ablation_hybrid_model(input_dims, latent_dim, num_classes, drop_regularization=False, drop_towers=False):
+    """
+    Creates specialized hybrid configurations to isolate individual design components.
+    """
+    input_layers = []
+    processed_outputs = []
+    
+    # Toggle regularization weight parameters
+    l2_penalty = 0.0 if drop_regularization else 5e-3
+    dropout_rate = 0.0 if drop_regularization else 0.6
+    reg_scaffold = tf.keras.regularizers.l2(l2_penalty) if l2_penalty > 0.0 else None
+    
+    for i, dim in enumerate(input_dims):
+        input_layer = tf.keras.layers.Input(shape=(dim,), name=f"ablation_view_{i+1}_input")
+        input_layers.append(input_layer)
+        
+        if drop_towers:
+            # Bypass independent feature towers entirely
+            processed_outputs.append(input_layer)
+        else:
+            # Maintain independent view-specific network towers
+            x = tf.keras.layers.Dense(512, activation='relu', kernel_regularizer=reg_scaffold)(input_layer)
+            if dropout_rate > 0.0:
+                x = tf.keras.layers.Dropout(dropout_rate)(x)
+            x = tf.keras.layers.Dense(256, activation='relu', kernel_regularizer=reg_scaffold)(x)
+            if dropout_rate > 0.0:
+                x = tf.keras.layers.Dropout(dropout_rate)(x)
+            tower_output = tf.keras.layers.Dense(128, activation='relu')(x)
+            processed_outputs.append(tower_output)
+            
+    # Combine feature representations
+    fused = tf.keras.layers.Concatenate()(processed_outputs)
+    
+    # Downstream classification dense layers
+    x = tf.keras.layers.Dense(256, activation='relu', kernel_regularizer=reg_scaffold)(fused)
+    if dropout_rate > 0.0:
+        x = tf.keras.layers.Dropout(dropout_rate)(x)
+    x = tf.keras.layers.Dense(128, activation='relu', kernel_regularizer=reg_scaffold)(x)
+    if dropout_rate > 0.0:
+        x = tf.keras.layers.Dropout(dropout_rate)(x)
+        
+    output_layer = tf.keras.layers.Dense(num_classes, activation='softmax', name="ablation_output")(x)
+    
+    model = tf.keras.models.Model(inputs=input_layers, outputs=output_layer, name="ablation_hybrid_model")
+    return model

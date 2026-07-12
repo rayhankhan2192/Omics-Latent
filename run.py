@@ -70,7 +70,7 @@ if __name__ == "__main__":
                         help='Turn on Sparse AE with this L1 penalty (e.g., 1e-5).')
     
     parser.add_argument('--model-type', type=str, required=True, 
-                        choices=['general', 'view_stacking', 'model_stacking', 'end_to_end', 'hybrid_fusion', 'pure_original'], # <-- ADDED
+                        choices=['general', 'view_stacking', 'model_stacking', 'end_to_end', 'hybrid_fusion', 'pure_original', 'ablation'], # <-- ADDED
                         help='The architectural scenario to run.')
 
     args = parser.parse_args()
