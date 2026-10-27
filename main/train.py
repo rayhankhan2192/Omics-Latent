@@ -5,7 +5,7 @@ import pandas as pd
 import tensorflow as tf
 from sklearn.metrics import accuracy_score, f1_score, classification_report, confusion_matrix
 from sklearn.preprocessing import LabelEncoder
-from sklearn.model_selection import KFold
+from sklearn.model_selection import KFold, train_test_split
 import logging
 import seaborn as sns
 import matplotlib.pyplot as plt
@@ -13,8 +13,12 @@ from sklearn.metrics import roc_auc_score
 
 from main import features
 from main import models
+from main.cosine_matrix import cosine_hybrid_features
+from sklearn.utils.class_weight import compute_class_weight
+from sklearn.metrics import balanced_accuracy_score, precision_score, recall_score
+from main.cosine_matrix import cosine_matrix, topk_adjacency
 
-# --- Setup Logging ---
+# Setup Logging
 logger = logging.getLogger("Training Module")
 logging.basicConfig(level=logging.INFO, format='INFO:%(module)s:%(message)s')
 
@@ -85,7 +89,13 @@ def run_experiment(config):
     class_names = [str(c) for c in le.classes_]
     config['num_classes'] = len(class_names) # Ensure num_classes is correct
 
-    # --- Scenario Controller ---
+    # Dedicated paired experiment: same preprocessing, encoder, data split, and seeds.
+    if config['model_type'] == 'cosine_compare':
+        run_cosine_comparison(data_tr_list, data_te_list, labels_tr_encoded,
+                              labels_te_encoded, class_names, config)
+        return
+
+    # Scenario Controller
     
     if config['model_type'] == 'end_to_end':
         # Scenario 4: No pre-training. Train one model from scratch on original data.
@@ -226,13 +236,13 @@ def run_view_stacking_classifier(train_latent_list, test_latent_list, labels_tr_
     num_classes = config['num_classes']
     n_splits = 5
     
-    # --- Callbacks (more sensitive for stacking) ---
+    # Callbacks (more sensitive for stacking)
     callbacks = get_stacking_callbacks()
     
     meta_features_train = []
     meta_features_test = []
 
-    # --- Level 1 Training ---
+    # Level 1 Training
     for i in range(num_views):
         view_num = config['view_list'][i]
         logger.info(f"--- Training Level 1 Base Classifier for View {view_num} ---")
@@ -270,7 +280,7 @@ def run_view_stacking_classifier(train_latent_list, test_latent_list, labels_tr_
         meta_features_train.append(oof_train_preds)
         meta_features_test.append(np.mean(fold_test_preds, axis=0))
 
-    # --- Level 2 Training ---
+    # Level 2 Training
     logger.info("--- Training Level 2 Meta-Classifier ---")
     X_train_meta = np.concatenate(meta_features_train, axis=1)
     X_test_meta = np.concatenate(meta_features_test, axis=1)
@@ -290,7 +300,7 @@ def run_view_stacking_classifier(train_latent_list, test_latent_list, labels_tr_
         shuffle=True, verbose=1
     )
     
-    # --- Evaluate ---
+    # Evaluate
     logger.info("Evaluating View-Level Stacking model...")
     predictions = np.argmax(meta_classifier.predict(X_test_meta), axis=1)
     # evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "view_stacking_")
@@ -315,7 +325,7 @@ def run_model_stacking_classifier(train_latent_list, test_latent_list, labels_tr
     num_classes = config['num_classes']
     n_splits = 5
 
-    # --- Callbacks (more sensitive for stacking) ---
+    # Callbacks (more sensitive for stacking)
     callbacks = get_stacking_callbacks()
     
     # Define our list of strong Level 1 models
@@ -334,7 +344,7 @@ def run_model_stacking_classifier(train_latent_list, test_latent_list, labels_tr
     meta_features_train = []
     meta_features_test = []
 
-    # --- Level 1 Training ---
+    # Level 1 Training
     for model_name, create_model in base_model_creators.items():
         logger.info(f"--- Training Level 1 Base Model: {model_name} ---")
         
@@ -368,7 +378,7 @@ def run_model_stacking_classifier(train_latent_list, test_latent_list, labels_tr
         meta_features_train.append(oof_train_preds)
         meta_features_test.append(np.mean(fold_test_preds, axis=0))
 
-    # --- Level 2 Training ---
+    # Level 2 Training
     logger.info("--- Training Level 2 Meta-Classifier ---")
     X_train_meta = np.concatenate(meta_features_train, axis=1)
     X_test_meta = np.concatenate(meta_features_test, axis=1)
@@ -389,7 +399,7 @@ def run_model_stacking_classifier(train_latent_list, test_latent_list, labels_tr
         shuffle=True, verbose=1
     )
     
-    # --- Evaluate ---
+    # Evaluate
     logger.info("Evaluating Multi-Model Stacking model...")
     predictions = np.argmax(meta_classifier.predict(X_test_meta), axis=1)
     # evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "model_stacking_")
@@ -397,7 +407,6 @@ def run_model_stacking_classifier(train_latent_list, test_latent_list, labels_tr
 
 
 # SCENARIO 4: END-TO-END (LATENT + ORIGINAL) CLASSIFIER
-
 
 def run_end_to_end_classifier(data_tr_list, data_te_list, labels_tr_encoded, labels_te_encoded, class_names, config):
     """
@@ -423,7 +432,7 @@ def run_end_to_end_classifier(data_tr_list, data_te_list, labels_tr_encoded, lab
     train_data = data_tr_list
     test_data = data_te_list
     
-    # --- Compile ---
+    # Compile
     optimizer = tf.keras.optimizers.Adam(learning_rate=config['learning_rate_classify'])
     classifier.compile(
         optimizer=optimizer,
@@ -431,10 +440,10 @@ def run_end_to_end_classifier(data_tr_list, data_te_list, labels_tr_encoded, lab
         metrics=['accuracy']
     )
     
-    # --- Callbacks ---
+    # Callbacks
     callbacks = get_default_callbacks()
 
-    # --- Train ---
+    # Train
     logger.info(f"Starting training for {classifier.name}...")
     history = classifier.fit(
         train_data, # This is a list of [view1_tr, view2_tr, view3_tr]
@@ -447,7 +456,7 @@ def run_end_to_end_classifier(data_tr_list, data_te_list, labels_tr_encoded, lab
         verbose=1
     )
     
-    # --- Evaluate ---
+    # Evaluate
     logger.info(f"Evaluating {classifier.name}...")
     predictions = np.argmax(classifier.predict(test_data), axis=1)
     # evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "end_to_end_")
@@ -467,7 +476,7 @@ def run_hybrid_fusion_classifier(data_tr_list, data_te_list,
     
     num_views = len(data_tr_list)
     
-    # --- 1. Create the Hybrid Feature Lists ---
+    # 1. Create the Hybrid Feature Lists 
     logger.info("Creating hybrid (latent + original) feature sets...")
     train_hybrid_data = []
     test_hybrid_data = []
@@ -486,7 +495,7 @@ def run_hybrid_fusion_classifier(data_tr_list, data_te_list,
 
     logger.info(f"New hybrid input dimensions: {hybrid_input_dims}")
     
-    # --- 2. Create the Model ---
+    # 2. Create the Model 
     # We can reuse the same model structure as Scenario 4,
     # as it's already a multi-input model.
     # The "VCDN" you mentioned would be implemented here.
@@ -503,7 +512,7 @@ def run_hybrid_fusion_classifier(data_tr_list, data_te_list,
     train_data = train_hybrid_data
     test_data = test_hybrid_data
     
-    # --- 3. Compile (with class weights) ---
+    # 3. Compile (with class weights)
     optimizer = tf.keras.optimizers.Adam(learning_rate=config['learning_rate_classify'])
     classifier.compile(
         optimizer=optimizer,
@@ -523,7 +532,7 @@ def run_hybrid_fusion_classifier(data_tr_list, data_te_list,
     #class_weights_dict[0] = class_weights_dict[0] * 2.0 
     logger.info(f"Using class weights: {class_weights_dict}")
 
-    # --- 4. Train ---
+    # 4. Train
     callbacks = get_default_callbacks()
     logger.info(f"Starting training for {classifier.name}...")
     
@@ -539,7 +548,7 @@ def run_hybrid_fusion_classifier(data_tr_list, data_te_list,
         class_weight=class_weights_dict
     )
     
-    # --- 5. Evaluate ---
+    # 5. Evaluate
     logger.info(f"Evaluating {classifier.name}...")
     predictions = np.argmax(classifier.predict(test_data), axis=1)
     # evaluate_and_plot(predictions, labels_te_encoded, history, class_names, "hybrid_fusion_")
@@ -682,7 +691,7 @@ def evaluate_and_plot(predictions, labels_te_encoded, history, class_names, file
     Calculates operational metrics, computes threshold-independent AUC-ROC scores,
     prints classification reports, and saves performance plots.
     """
-    # --- Calculate Standard Metrics ---
+    # Calculate Standard Metrics 
     accuracy = accuracy_score(labels_te_encoded, predictions)
     f1 = f1_score(labels_te_encoded, predictions, average="macro")
     report = classification_report(labels_te_encoded, predictions, target_names=class_names, zero_division=0)
@@ -691,7 +700,7 @@ def evaluate_and_plot(predictions, labels_te_encoded, history, class_names, file
     logger.info(f"Accuracy on Test Set: {accuracy:.4f}")
     logger.info(f"Macro F1-Score on Test Set: {f1:.4f}")
     
-    # --- Compute Probabilities for AUC-ROC ---
+    # Compute Probabilities for AUC-ROC
     test_probabilities = classifier.predict(test_data)
     
     if test_probabilities.shape[1] == 2:
@@ -711,11 +720,11 @@ def evaluate_and_plot(predictions, labels_te_encoded, history, class_names, file
         logger.info(f"Macro One-vs-Rest AUC-ROC on Test Set: {multiclass_auc:.4f}")
         
     logger.info("---------------------\n")
-    logger.info("\n--- Classification Report ---")
+    logger.info("\nClassification Report")
     logger.info(f"\n{report}")
     logger.info("-----------------------------\n")
 
-    # --- Confusion Matrix Plot ---
+    # Confusion Matrix Plot
     cm_filename = f"{file_prefix}confusion_matrix.png"
     logger.info(f"Generating confusion matrix plot... ({cm_filename})")
     cm = confusion_matrix(labels_te_encoded, predictions)
@@ -729,7 +738,7 @@ def evaluate_and_plot(predictions, labels_te_encoded, history, class_names, file
     plt.savefig(cm_filename, dpi=300)
     plt.close()
 
-    # === Plot Training History ===
+    # Plot Training History
     curves_filename = f"{file_prefix}training_curves.png"
     logger.info(f"Generating training curves plot... ({curves_filename})")
     plt.figure(figsize=(12, 4))
@@ -854,3 +863,112 @@ def run_hybrid_ablation_study(data_tr_list, data_te_list, train_latent_list, tes
         print("INFO:Training Module:")
         print(classification_report(labels_te_encoded, predictions, target_names=class_names))
         print("\n")
+
+# SCENARIO 8: PAIRED COSINE SIMILARITY MATRIX + HYBRID FUSION ABLATION
+# Keeps all existing scenarios intact. Cosine matrices represent patient similarity;
+# there is deliberately NO GCN or VCDN in this experiment.
+def run_cosine_comparison(data_tr_list, data_te_list, labels_tr_encoded,
+                          labels_te_encoded, class_names, config):
+
+    seed = int(config.get('seed', 42))
+    tf.keras.utils.set_random_seed(seed)
+    indices = np.arange(len(labels_tr_encoded))
+    fit_idx, val_idx = train_test_split(
+        indices, test_size=float(config.get('validation_size', 0.2)),
+        stratify=labels_tr_encoded, random_state=seed)
+    y_fit, y_val = labels_tr_encoded[fit_idx], labels_tr_encoded[val_idx]
+    fit_original = [np.asarray(x[fit_idx], dtype=np.float32) for x in data_tr_list]
+    val_original = [np.asarray(x[val_idx], dtype=np.float32) for x in data_tr_list]
+    test_original = [np.asarray(x, dtype=np.float32) for x in data_te_list]
+
+    # Autoencoders fit only on classifier-fitting patients: validation/test
+    # patient embeddings come from the frozen fitting-only encoders.
+    encoders, _ = pretrain_encoders(fit_original, config)
+    fit_latent = [np.asarray(enc.predict(x, verbose=0), dtype=np.float32)
+                  for enc, x in zip(encoders, fit_original)]
+    val_latent = [np.asarray(enc.predict(x, verbose=0), dtype=np.float32)
+                  for enc, x in zip(encoders, val_original)]
+    test_latent = [np.asarray(enc.predict(x, verbose=0), dtype=np.float32)
+                   for enc, x in zip(encoders, test_original)]
+
+    output_dir = os.path.join(config.get('output_dir', 'cosine_comparison_results'))
+    os.makedirs(output_dir, exist_ok=True)
+    k = int(config.get('cosine_k', 5))
+    if k < 1 or k >= len(fit_idx):
+        raise ValueError(f'cosine_k must be in [1, {len(fit_idx)-1}]')
+    use_matrix = bool(config.get('save_cosine_matrices', False))
+    base_fit, base_val, base_test = [], [], []
+    augmented_fit, augmented_val, augmented_test = [], [], []
+    for v, (x_fit, x_val, x_test, z_fit, z_val, z_test) in enumerate(zip(
+            fit_original, val_original, test_original,
+            fit_latent, val_latent, test_latent), start=1):
+        # S_fit: n_fit x n_fit, S_val: n_val x n_fit,
+        # S_test: n_test x n_fit. Never use validation/test as graph references.
+        nf, sf, af = cosine_hybrid_features(
+            x_fit, x_fit, z_fit, k=k, self_reference=True, return_matrices=True)
+        nv, sv, av = cosine_hybrid_features(
+            x_fit, x_val, z_fit, k=k, return_matrices=True)
+        nt, st, at = cosine_hybrid_features(
+            x_fit, x_test, z_fit, k=k, return_matrices=True)
+        if use_matrix:
+            np.savez_compressed(os.path.join(output_dir, f'view_{v}_cosine_matrices.npz'),
+                                fit_similarity=sf, validation_similarity=sv,
+                                test_similarity=st, fit_adjacency=af,
+                                validation_adjacency=av, test_adjacency=at,
+                                fitting_indices=fit_idx, validation_indices=val_idx)
+        base_fit.append(np.concatenate([x_fit, z_fit], axis=1))
+        base_val.append(np.concatenate([x_val, z_val], axis=1))
+        base_test.append(np.concatenate([x_test, z_test], axis=1))
+        augmented_fit.append(np.concatenate([x_fit, z_fit, nf], axis=1))
+        augmented_val.append(np.concatenate([x_val, z_val, nv], axis=1))
+        augmented_test.append(np.concatenate([x_test, z_test, nt], axis=1))
+        logger.info(f'View {v}: cosine matrix shapes train={sf.shape}, '
+                    f'validation={sv.shape}, test={st.shape}; k={k}')
+
+    weights = compute_class_weight('balanced', classes=np.unique(y_fit), y=y_fit)
+    class_weights_dict = dict(zip(np.unique(y_fit).tolist(), weights.tolist()))
+    results = []
+    for label, fit_views, val_views, test_views in [
+        ('hybrid_no_cosine', base_fit, base_val, base_test),
+        ('hybrid_cosine_matrix', augmented_fit, augmented_val, augmented_test),
+    ]:
+        tf.keras.backend.clear_session()
+        tf.keras.utils.set_random_seed(seed)
+        model = models.create_end_to_end_model(
+            input_dims=[arr.shape[1] for arr in fit_views],
+            latent_dim_per_view=config['latent_dim'],
+            num_classes=config['num_classes'])
+        model.compile(optimizer=tf.keras.optimizers.Adam(config['learning_rate_classify']),
+                      loss='sparse_categorical_crossentropy', metrics=['accuracy'])
+        history = model.fit(
+            fit_views, y_fit, validation_data=(val_views, y_val),
+            epochs=config['epochs_classify'], batch_size=config['batch_size'],
+            callbacks=get_default_callbacks(), class_weight=class_weights_dict,
+            shuffle=True, verbose=1)
+        prob = model.predict(test_views, verbose=0)
+        pred = prob.argmax(axis=1)
+        result = dict(model=label, seed=seed, cosine_k=k if label.endswith('matrix') else 0,
+                      accuracy=accuracy_score(labels_te_encoded, pred),
+                      balanced_accuracy=balanced_accuracy_score(labels_te_encoded, pred),
+                      macro_f1=f1_score(labels_te_encoded, pred, average='macro'),
+                      macro_precision=precision_score(labels_te_encoded, pred, average='macro', zero_division=0),
+                      macro_recall=recall_score(labels_te_encoded, pred, average='macro', zero_division=0))
+        try:
+            result['roc_auc'] = (roc_auc_score(labels_te_encoded, prob[:, 1])
+                 if prob.shape[1] == 2 else roc_auc_score(
+                     labels_te_encoded, prob, multi_class='ovr', average='macro'))
+        except ValueError:
+            result['roc_auc'] = np.nan
+        results.append(result)
+        logger.info('%s results: %s', label, result)
+        logger.info('\n%s', classification_report(labels_te_encoded, pred,
+                          target_names=class_names, zero_division=0))
+        pd.DataFrame({'true_label': labels_te_encoded, 'predicted_label': pred,
+                      **{f'probability_{c}': prob[:, c] for c in range(prob.shape[1])}}
+                     ).to_csv(os.path.join(output_dir, f'{label}_predictions.csv'), index=False)
+        pd.DataFrame(history.history).to_csv(
+            os.path.join(output_dir, f'{label}_history.csv'), index=False)
+        model.save(os.path.join(output_dir, f'{label}.keras'))
+    pd.DataFrame(results).to_csv(os.path.join(output_dir, 'comparison.csv'), index=False)
+    logger.info('Comparison saved to %s', output_dir)
+    return results

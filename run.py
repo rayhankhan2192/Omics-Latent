@@ -5,7 +5,6 @@ import logging
 logger = logging.getLogger(__name__)
 logging.basicConfig(level=logging.INFO, format='INFO:%(name)s:%(message)s')
 
-# Import the main training pipeline
 from main import train
 
 BRCA_CONFIG = {
@@ -70,8 +69,17 @@ if __name__ == "__main__":
                         help='Turn on Sparse AE with this L1 penalty (e.g., 1e-5).')
     
     parser.add_argument('--model-type', type=str, required=True, 
-                        choices=['general', 'view_stacking', 'model_stacking', 'end_to_end', 'hybrid_fusion', 'pure_original', 'ablation'], # <-- ADDED
+                        choices=['general', 'view_stacking', 'model_stacking', 'end_to_end', 'hybrid_fusion', 'pure_original', 'ablation', 'cosine_compare'], # <-- ADDED
                         help='The architectural scenario to run.')
+
+    parser.add_argument('--cosine-k', type=int, default=5,
+                        help='Top-k positive cosine-similar training patients per view.')
+    parser.add_argument('--validation-size', type=float, default=0.2,
+                        help='Held-out fraction of training data for early stopping.')
+    parser.add_argument('--seed', type=int, default=42)
+    parser.add_argument('--save-cosine-matrices', action='store_true',
+                        help='Export cosine and adjacency matrices for all three views.')
+    parser.add_argument('--output-dir', default='cosine_comparison_results')
 
     args = parser.parse_args()
     
@@ -85,6 +93,11 @@ if __name__ == "__main__":
     config_to_run['model_type'] = args.model_type
     config_to_run['classifier'] = args.classifier
     config_to_run['save_features'] = args.save_features
+    config_to_run['cosine_k'] = args.cosine_k
+    config_to_run['validation_size'] = args.validation_size
+    config_to_run['seed'] = args.seed
+    config_to_run['save_cosine_matrices'] = args.save_cosine_matrices
+    config_to_run['output_dir'] = args.output_dir
     
     # --- 3. Override Hyperparameters ---
     if args.batch_size is not None:
